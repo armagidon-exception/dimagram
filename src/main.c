@@ -1,82 +1,96 @@
 #include "cairo.h"
-#include "igraph_layout.h"
-#include "igraph_matrix.h"
-#include "igraph_types.h"
-#include "igraph_vector.h"
-#include "renderer.h"
-#include "utils.h"
 #include <getopt.h>
 #include <igraph.h>
+#include "diagram.h"
+#include "log.h"
+#include <float.h>
+#include <getopt.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
 
-double maxd(double a, double b) { return a > b ? a : b; }
-double mind(double a, double b) { return a < b ? a : b; }
+void print_help(const char *execname) {
+  printf("Usage: %s [-i input_file] [-o output_file]\n\n", execname);
+  printf("Generate diagrams from text input.\n\n");
+  printf("Options:\n");
+  printf("  -i input_file   Read input from the specified file. Defaults to "
+         "stdin if not provided.\n");
+  printf("  -o output_file  Write output to the specified file. Defaults to "
+         "stdout if not provided.\n");
+  printf("  -h              Display this help message and exit.\n\n");
+  printf("Examples:\n");
+  printf("  %s -i diagram.txt -o output.svg  # Read from diagram.txt and write "
+         "to output.svg\n",
+         execname);
+  printf("  %s -i diagram.txt                # Read from diagram.txt and write "
+         "to stdout\n",
+         execname);
+  printf("  %s                               # Read from stdin and write to "
+         "stdout\n\n",
+         execname);
+  printf("For more information, visit: "
+         "https://github.com/armagidon-exception/dimagram\n");
+}
 
-int main(void) {
-  igraph_t graph;
-  igraph_integer_t num_vertices = 10;
-  igraph_integer_t num_edges = 10;
-  igraph_matrix_t resm;
-
-  igraph_real_t temp_min = 0.1, temp_max = num_vertices,
-                temp_init = sqrt(num_vertices);
-
-  igraph_matrix_init(&resm, num_vertices, 2);
-
-  igraph_rng_seed(igraph_rng_default(), 10);
-
-  igThrowIfError(igraph_erdos_renyi_game_gnm(
-      &graph, num_vertices, num_edges, IGRAPH_UNDIRECTED, IGRAPH_NO_LOOPS));
-
-  igThrowIfError(igraph_layout_gem(&graph, &resm, true,
-                                   40 * num_vertices * num_vertices, temp_max,
-                                   temp_min, temp_init));
-
-  igraph_vector_int_t edges;
-  igraph_vector_int_init(&edges, 2 * num_edges);
-  igraph_get_edgelist(&graph, &edges, true);
-
-  double mx, Mx, my, My;
-  for (int i = 0; i < num_vertices; i++) {
-    double x = MATRIX(resm, i, 0);
-    double y = MATRIX(resm, i, 1);
-
-    mx = mind(mx, x);
-    my = mind(my, y);
-    My = maxd(My, y);
-    Mx = maxd(Mx, x);
+int main(int argc, char **argv) {
+  int opt;
+  FILE *input = stdin;
+  FILE *output = stdout;
+  while ((opt = getopt(argc, argv, "i:o:h")) != -1) {
+    switch (opt) {
+    case 'i': {
+      if (input && input != stdin) {
+        fclose(input);
+      }
+      FILE *f = fopen(optarg, "r");
+      if (!f) {
+        perror("Error");
+        exit(EXIT_FAILURE);
+      }
+      input = f;
+      break;
+    }
+    case 'o': {
+      if (output && output != stdout) {
+        fclose(output);
+      }
+      FILE *f = fopen(optarg, "w");
+      if (!f) {
+        perror("Error");
+        exit(EXIT_FAILURE);
+      }
+      output = f;
+      break;
+    }
+    default:
+      print_help(argv[0]);
+      exit(EXIT_FAILURE);
+      break;
+    }
   }
 
-  renderer_t *renderer = render_svg_create("image.svg", Mx - mx + 12, My - my + 12);
-  for (int i = 0; i < num_vertices; i++) {
-    double x = MATRIX(resm, i, 0);
-    double y = MATRIX(resm, i, 1);
-    // printf("%f %f\n", x, y);
-    node_t *node = renderer_create_orb();
-    node->x = x;
-    node->y = y;
-    node->render(renderer, node, x - mx + 6, y - my + 6);
-    node->destroy(node);
+  Arena arena = {0};
+  diagram_t diagram;
+  diagram_status_e status =
+      diagram_parse_diagram_from_stream(&diagram, input, &arena);
+  if (status != DIAGRAM_OK) {
+    log_error("Error: %s", diagram.errmsg);
+    exit(EXIT_FAILURE);
   }
 
-  for (int i = 0; i < num_edges; i++) {
-    igraph_integer_t u, v;
-    igraph_edge(&graph, i, &u, &v);
-
-    double x1 = MATRIX(resm, u, 0) - mx + 6, y1 = MATRIX(resm, u, 1) - my + 6,
-           x2 = MATRIX(resm, v, 0) - mx + 6, y2 = MATRIX(resm, v, 1) - my + 6;
-
-    renderer_link(renderer, x1, y1, x2, y2);
+  cairo_surface_t *surf = diagram_lay_out(&diagram, output, &status);
+  if (status != DIAGRAM_OK) {
+    log_error("Error: %s", diagram.errmsg);
+    exit(EXIT_FAILURE);
   }
-  igraph_vector_int_destroy(&edges);
+  for (int i = 0; i < igraph_vcount(&diagram.G); i++) {
+    cairo_surface_destroy(diagram.textures[i]);
+  }
 
-  renderer_destroy(renderer);
+  cairo_surface_destroy(surf);
+  igraph_destroy(&diagram.G);
 
-  igraph_matrix_destroy(&resm);
-  igraph_destroy(&graph);
-
+  arena_free(&arena);
   return EXIT_SUCCESS;
 }
