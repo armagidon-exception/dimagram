@@ -1,280 +1,190 @@
 #include "boyer/graph.h"
-#include "cp.h"
 #include "graph_utils.h"
-#include "igraph_matrix.h"
+#include "hs.h"
+#include "igraph_components.h"
 #include "igraph_operators.h"
 #include "log.h"
-#include "utils.h"
-#include <criterion/criterion.h>
-#include <criterion/internal/assert.h>
-#include <criterion/internal/new_asserts.h>
-#include <criterion/new/assert.h>
+#include "tester.h"
+#include <assert.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+
+#define SAMPLE_SIZE_LIMIT 500
 
 #define HS_TEST_ENV
-#include "cp.c"
+#include "hs.c"
 
-igraph_t G;
-void setup(void) { igraph_empty(&G, 0, IGRAPH_UNDIRECTED); }
+typedef struct {
+  const igraph_t *g;
+} graph_test_data;
 
-void teardown(void) { igraph_destroy(&G); }
+// typedef void (*graph_tester_func)(const igraph_t *g, int sampleNumber);
+static void read_graph(const char *dataset, int logger_fd, tester_func func);
+static void biconnector_tester(testcase_state_t *state, void *data,
+                               size_t datalen);
+static void embedder_tester(testcase_state_t *state, void *data,
+                            size_t datalen);
+static void canonical_ordering_tester(testcase_state_t *state, void *data,
+                                      size_t datalen);
 
-// Test(test_canonical_ordering, test_boyer, .init = setup, .fini = teardown) {
-//   igraph_t *Gp = &G;
-//   igraph_add_vertices(Gp, 6, 0);
-//   igraph_add_edge(Gp, 0, 1);
-//   igraph_add_edge(Gp, 1, 2);
-//   igraph_add_edge(Gp, 2, 3);
-//   igraph_add_edge(Gp, 3, 4);
-//   igraph_add_edge(Gp, 4, 5);
-//   igraph_add_edge(Gp, 5, 0);
-//   igraph_add_edge(Gp, 1, 3);
-//   igraph_add_edge(Gp, 1, 4);
-//
-//   veci edgelist = veci_new();
-//   BM_graph *bmg = gp_New();
-//   gp_InitGraph(bmg, (int)6);
-//   igraph_get_edgelist(Gp, &edgelist, true);
-//   for (gint i = 0; i < igraph_ecount(Gp); i++) {
-//     gp_AddEdge(bmg, (int)vecget(edgelist, i), 0,
-//                (int)vecget(edgelist, i + igraph_ecount(Gp)), 0);
-//   }
-//   veci_dest(&edgelist);
-//   if (gp_Embed(bmg, EMBEDFLAGS_PLANAR)) {
-//   EMBEDDING_ERROR:
-//     gp_Free(&bmg);
-//     return;
-//   }
-//
-//   // gp_Write(bmg, "stdout", WRITE_DEBUGINFO);
-//
-//   if (gp_SortVertices(bmg)) {
-//     goto EMBEDDING_ERROR;
-//   }
-//   // log_debug("counterclockwise=%d clockwise=%d", bmg->G[1].link[0],
-//   //           bmg->G[1].link[1]);
-//   // log_debug("counterclockwise=%d clockwise=%d", bmg->G[bmg->G[1].link[0]].v,
-//   //           bmg->G[bmg->G[1].link[1]].v);
-//
-//   // for (int i = 1; i < 2; i++) {
-//   //   printf("%d:", i);
-//   //
-//   //   int J = bmg->G[i].link[1];
-//   //   while (J >= bmg->N) {
-//   //     printf(" %d", bmg->G[J].v);
-//   //     J = bmg->G[J].link[1];
-//   //   }
-//   //   printf(" %d\n", NIL);
-//   // }
-//
-//   // gp_Write(bmg, "stdout", WRITE_DEBUGINFO);
-// }
-//
-// Test(test_canonical_ordering, test_embedding, .init = setup, .fini = teardown) {
-//   igraph_t *Gp = &G;
-//   igraph_add_vertices(Gp, 6, 0);
-//   igraph_add_edge(Gp, 0, 1);
-//   igraph_add_edge(Gp, 1, 2);
-//   igraph_add_edge(Gp, 2, 3);
-//   igraph_add_edge(Gp, 3, 4);
-//   igraph_add_edge(Gp, 4, 5);
-//   igraph_add_edge(Gp, 5, 0);
-//
-//   Arena test_arena = {0};
-//   Arena *arenaP = &test_arena;
-//
-//   embedding_t em;
-//   em.N = igraph_vcount(Gp);
-//   em.M = 2 * igraph_ecount(Gp);
-//   em.edges = arena_calloc(arenaP, UCAST(em.M), sizeof(em_edge));
-//   em.vertices = arena_calloc(arenaP, UCAST(em.N), sizeof(em_vertex));
-//   em.degrees = arena_calloc(arenaP, UCAST(em.N), sizeof(int));
-//
-//   cr_expect(eq(i64, init_embedding(Gp, &em, arenaP), 0));
-//
-//   for (int i = 0; i < 6; i++) {
-//     cr_expect(eq(i64, em.degrees[i], 2));
-//   }
-//
-//   for (int i = 0; i < 6; i++) {
-//     cr_expect(eq(i64, EDGE_TARGET(em, em.degrees[i]), 2));
-//     cr_expect(eq(i64, EDGE_TARGET(em, em.vertices[i][0]), (i + 5) % 6));
-//     cr_expect(eq(i64, EDGE_TARGET(em, em.vertices[i][1]), (i + 1) % 6));
-//   }
-// }
-//
-// Test(test_canonical_ordering, test_right_hand_walk, .init = setup,
-//      .fini = teardown) {
-//   igraph_t *Gp = &G;
-//   igraph_add_vertices(Gp, 6, 0);
-//   igraph_add_edge(Gp, 0, 1);
-//   igraph_add_edge(Gp, 1, 2);
-//   igraph_add_edge(Gp, 2, 3);
-//   igraph_add_edge(Gp, 3, 4);
-//   igraph_add_edge(Gp, 4, 5);
-//   igraph_add_edge(Gp, 5, 0);
-//
-//   Arena test_arena = {0};
-//   Arena *arenaP = &test_arena;
-//
-//   co_state state;
-//   embedding_t em;
-//   em.N = igraph_vcount(Gp);
-//   em.M = 2 * igraph_ecount(Gp);
-//   em.edges = arena_calloc(arenaP, UCAST(em.M), sizeof(em_edge));
-//   em.vertices = arena_calloc(arenaP, UCAST(em.N), sizeof(em_vertex));
-//   em.degrees = arena_calloc(arenaP, UCAST(em.N), sizeof(int));
-//   state.inGk = arena_calloc(arenaP, UCAST(em.N), sizeof(bool));
-//
-//   cr_expect(eq(i64, init_embedding(Gp, &em, arenaP), 0));
-//
-//   rhw_result_init(arenaP, em.M, &state.rhw);
-//
-//   rightHandWalk(&em, &state.rhw, arenaP);
-//   cr_expect(eq(u64, state.rhw.faces.N, 2));
-//
-//   // for (int fi = 0; fi < state.rhw.faces.N; fi++) {
-//   for (int i = 0; i < SCAST(state.rhw.faces.N); i++) {
-//     face_edge_t *fe = &AS_FACEEDGE(state.rhw, FACE(state.rhw.faces, 0).array[i]);
-//     gint v = EDGE_TARGET(em, fe->eid);
-//     gint vi = EDGE_SOURCE(em, fe->eid);
-//     gint wi = EDGE_TARGET(em, fe->next);
-//
-//     cr_expect(le(i64, fe->leftface, 2));
-//
-//     // log_debug("%ld -> %ld -> %ld", vi, v, wi);
-//     cr_expect(eq(i64, vi, (v + 5) % 6));
-//     cr_expect(eq(i64, wi, (v + 1) % 6));
-//     // printf("%ld -> ", v);
-//   }
-//   // printf("\n");
-//
-//   for (int i = 0; i < SCAST(FACE(state.rhw.faces, 1).N); i++) {
-//     face_edge_t *fe =
-//         &AS_FACEEDGE(state.rhw, FACE(state.rhw.faces, 1).array[i]);
-//     gint v = EDGE_TARGET(em, fe->eid);
-//     gint vi = EDGE_SOURCE(em, fe->eid);
-//     gint wi = EDGE_TARGET(em, fe->next);
-//
-//     // log_debug("%ld fe", fe->leftface);
-//     cr_expect(le(i64, fe->leftface, 2));
-//     cr_expect(eq(i64, wi, (v + 5) % 6));
-//     cr_expect(eq(i64, vi, (v + 1) % 6));
-//   }
-// }
-//
-// Test(test_canonical_ordering, test_canonical_ordering, .init = setup,
-//      .fini = teardown) {
-//   igraph_t *Gp = &G;
-//   igraph_add_vertices(Gp, 6, 0);
-//   igraph_add_edge(Gp, 0, 1);
-//   igraph_add_edge(Gp, 1, 2);
-//   igraph_add_edge(Gp, 2, 3);
-//   igraph_add_edge(Gp, 3, 4);
-//   igraph_add_edge(Gp, 4, 5);
-//   igraph_add_edge(Gp, 5, 0);
-//
-//   Arena test_arena = {0};
-//   co_t co;
-//   embedding_t em;
-//   co_init(&co, &test_arena);
-//   canonical_ordering(Gp, &em, &co);
-//
-//   for (int i = 0; i < SCAST(co.N); i++) {
-//     log_debug("%d: %d", i, co.array[i]);
-//   }
-// }
-//
-//
-// Test(test_canonical_ordering, test_canonical_ordering1, .init = setup,
-//      .fini = teardown) {
-//   igraph_t *Gp = &G;
-// igraph_add_vertices(Gp, 7, 0);
-// igraph_add_edge(Gp, 0, 1);
-// igraph_add_edge(Gp, 1, 2);
-// igraph_add_edge(Gp, 2, 3);
-// igraph_add_edge(Gp, 3, 4);
-// igraph_add_edge(Gp, 4, 5);
-// igraph_add_edge(Gp, 5, 6);
-// igraph_add_edge(Gp, 6, 0);
-// igraph_add_edge(Gp, 6, 3);
-//
-//   Arena test_arena = {0};
-//   co_t co;
-//   embedding_t em;
-//   co_init(&co, &test_arena);
-//   canonical_ordering(Gp, &em, &co);
-//
-//   for (int i = 0; i < SCAST(co.N); i++) {
-//     log_debug("%d: %d", i, co.array[i]);
-//   }
-// }
-//
-// Test(test_canonical_ordering, test_layout, .init = setup, .fini = teardown) {
-//   igraph_t *Gp = &G;
-//   igraph_add_vertices(Gp, 6, 0);
-//   igraph_add_edge(Gp, 0, 1);
-//   igraph_add_edge(Gp, 1, 2);
-//   igraph_add_edge(Gp, 2, 3);
-//   igraph_add_edge(Gp, 3, 4);
-//   igraph_add_edge(Gp, 4, 5);
-//   igraph_add_edge(Gp, 5, 0);
-//
-//   mat output;
-//   igraph_matrix_init(&output, 0, 0);
-//   // harel_sardes_layout(Gp, &output);
-// }
-//
-// Test(test_canonical_ordering, test_embedding1, .init = setup,
-//      .fini = teardown) {
-//   igraph_t *Gp = &G;
-//   igraph_add_vertices(Gp, 9, 0);
-//   igraph_add_edge(Gp, 0, 1);
-//   igraph_add_edge(Gp, 0, 2);
-//   igraph_add_edge(Gp, 0, 4);
-//   igraph_add_edge(Gp, 0, 5);
-//   igraph_add_edge(Gp, 0, 7);
-//   igraph_add_edge(Gp, 0, 8);
-//   igraph_add_edge(Gp, 1, 2);
-//   igraph_add_edge(Gp, 1, 3);
-//   igraph_add_edge(Gp, 1, 8);
-//   igraph_add_edge(Gp, 2, 3);
-//   igraph_add_edge(Gp, 2, 4);
-//   igraph_add_edge(Gp, 2, 6);
-//   igraph_add_edge(Gp, 3, 6);
-//   igraph_add_edge(Gp, 3, 7);
-//   igraph_add_edge(Gp, 3, 8);
-//   igraph_add_edge(Gp, 4, 7);
-//   igraph_add_edge(Gp, 4, 5);
-//   igraph_add_edge(Gp, 4, 6);
-//   igraph_add_edge(Gp, 5, 7);
-//   igraph_add_edge(Gp, 6, 7);
-//   igraph_add_edge(Gp, 7, 8);
-//
-//   Arena test_arena = {0};
-//   Arena *arenaP = &test_arena;
-//
-//   embedding_t em;
-//   em.N = igraph_vcount(Gp);
-//   em.M = 2 * igraph_ecount(Gp);
-//   em.edges = arena_calloc(arenaP, UCAST(em.M), sizeof(em_edge));
-//   em.vertices = arena_calloc(arenaP, UCAST(em.N), sizeof(em_vertex));
-//   em.degrees = arena_calloc(arenaP, UCAST(em.N), sizeof(int));
-//
-//   cr_expect(eq(i64, init_embedding(Gp, &em, arenaP), 0));
-//   rhw_result_t result;
-//   rhw_result_init(arenaP, em.M, &result);
-//   rightHandWalk(&em, &result, &test_arena);
-//
-//   // for (int i = 0; i < SCAST(result.faces.N); i++) {
-//   //   printFace(&result.faces, result.edges, &em, i);
-//   // }
-//
-//   gint current = em.vertices[0][0];
-//   do {
-//     printFace(&result.faces, result.edges, &em,
-//               result.edges[current ^ 1].leftface);
-//     current = em.edges[current].link[0];
-//   } while (current != em.vertices[0][0]);
-//
-//   arena_free(&test_arena);
-// }
+Test(test_biconnector) {
+  read_graph("graphs.txt", state->write_pipe, biconnector_tester);
+}
+
+Test(test_embedder) {
+  read_graph("graphs.txt", state->write_pipe, embedder_tester);
+}
+
+Test(test_canonical_ordering) {
+  read_graph("graphs.txt", state->write_pipe, canonical_ordering_tester);
+}
+
+int main(void) {
+  run_tests();
+  return 0;
+}
+
+static void read_graph(const char *dataset, int logger_fd, tester_func func) {
+  FILE *f = fopen(dataset, "r");
+  setvbuf(f, NULL, _IONBF, 0);
+  assert(f != 0);
+
+  int status;
+  int S;
+
+  status = fscanf(f, "%d", &S);
+
+  assert(status == 1);
+  char *buf = calloc(BUFSIZ, sizeof(char));
+  size_t ll = BUFSIZ;
+  for (int i = 0; i < MIN(S, SAMPLE_SIZE_LIMIT); i++) {
+    igraph_t g;
+    int N = -1;
+    status = fscanf(f, "%d", &N);
+    assert_eq(N, 8);
+    assert_eq(status, 1);
+    igraph_empty(&g, N, false);
+
+    for (int j = 0; j < N; j++) {
+      long read = getdelim(&buf, &ll, ';', f);
+      buf[--read] = '\0';
+      int v, off = 0, nc;
+      while (sscanf(buf + off, "%d%n", &v, &nc) > 0) {
+        igraph_add_edge(&g, v, j);
+        off += nc;
+      }
+    }
+    igraph_simplify(&g, 1, 1, 0);
+
+    // func(0, &g, sizeof(g));
+    char test_name[BUFSIZ] = {0};
+    sprintf(test_name, "%d", i);
+    testcase_t c = {test_name, func, 0, 0, logger_fd, false};
+    run_test(&c, &g, sizeof(g));
+  }
+  fclose(f);
+  free(buf);
+}
+
+static void biconnector_tester(testcase_state_t *state, void *data,
+                               size_t datalen) {
+  const igraph_t *g = (igraph_t *)data;
+  Arena a = {0};
+  bool biconnected;
+  igraph_is_biconnected(g, &biconnected);
+
+  graphP G = gp_New();
+  gp_InitGraph(G, (int)igraph_vcount(g));
+  hs_copy_from_igraph(g, G);
+  int status;
+  status = gp_Embed(G, EMBEDFLAGS_PLANAR);
+  assert_eq(status, 0);
+  status = gp_SortVertices(G);
+  assert_eq(status, 0);
+
+  gp_Write(G, "stdout", WRITE_ADJLIST);
+  if (!biconnected) {
+    log_debug("biconnected");
+    status = hs_graph_biconnect(g, G);
+    assert_eq(status, 0);
+  }
+
+  gp_ReinitializeGraph(G);
+  hs_copy_from_igraph(g, G);
+
+  gp_Write(G, "stdout", WRITE_ADJLIST);
+
+  for (int i = 0; i < G->N; i++) {
+    int j = G->G[i].link[1];
+    bool *array = arena_calloc(&a, G->N, sizeof(bool));
+    while (j >= G->N) {
+      // fprintf(Outfile, " %d", theGraph->G[j].v);
+      assert_eq(array[G->G[j].v], false);
+      array[G->G[j].v] = true;
+      j = G->G[j].link[1];
+    }
+  }
+
+  status = gp_Embed(G, EMBEDFLAGS_PLANAR);
+  assert_eq(status, 0);
+  status = gp_SortVertices(G);
+  assert_eq(status, 0);
+
+  igraph_is_biconnected(g, &biconnected);
+  assert_eq(biconnected, true);
+
+  bool connected = false;
+  igraph_is_connected(g, &connected, 0);
+  assert_eq(connected, true);
+
+  igraph_destroy(g);
+  gp_Free(&G);
+  arena_free(&a);
+}
+
+static void embedder_tester(testcase_state_t *state, void *data,
+                            size_t datalen) {
+
+  igraph_t *g = (igraph_t *)data;
+  Arena arena = {0};
+  int status;
+  igraph_t icopy;
+  igraph_copy(&icopy, g);
+
+  bool biconnected;
+  igraph_is_biconnected(&icopy, &biconnected);
+  if (biconnected)
+    return;
+
+  embedding_t em;
+  status = init_embedding(&icopy, &em, &arena);
+  assert_eq(status, 0);
+
+  arena_free(&arena);
+  igraph_destroy(&icopy);
+}
+
+static void canonical_ordering_tester(testcase_state_t *state, void *data,
+                                      size_t datalen) {
+  igraph_t *g = (igraph_t *)data;
+  Arena arena = {0};
+  igraph_t icopy;
+  igraph_copy(&icopy, g);
+
+  graphP G = gp_New();
+  gp_InitGraph(G, (int)igraph_vcount(g));
+  hs_copy_from_igraph(g, G);
+  int status;
+
+  co_t co;
+  co_init(&co, &arena);
+  embedding_t em;
+  status = (int)canonical_ordering(&icopy, &em, &co);
+  if (status == HS_NONPLANAR)
+    log_debug("Graph is non planar");
+
+  assert_eq(status, HS_OK);
+  arena_free(&arena);
+  igraph_destroy(&icopy);
+}

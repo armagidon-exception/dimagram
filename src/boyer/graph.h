@@ -17,10 +17,10 @@ Copyright 2005 John M. Boyer
 #ifndef GRAPH_H
 #define GRAPH_H
 
-#include <stdio.h>
 #include "appconst.h"
 #include "listcoll.h"
 #include "stack.h"
+#include <stdio.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -30,19 +30,18 @@ extern "C" {
         factor of N, the number of vertices. We allow 3N edges, but this
         number can be safely set to a larger integer value. */
 
-#define EDGE_LIMIT      3
+#define EDGE_LIMIT 3
 
 /* Simple integer selection macros */
-
 
 #define MIN3(x, y, z) MIN(MIN((x), (y)), MIN((y), (z)))
 #define MAX3(x, y, z) MAX(MAX((x), (y)), MAX((y), (z)))
 
 /* Vertex activity categories */
 
-#define VAS_INACTIVE    0
-#define VAS_INTERNAL    1
-#define VAS_EXTERNAL    2
+#define VAS_INACTIVE 0
+#define VAS_INTERNAL 1
+#define VAS_EXTERNAL 2
 
 /* Types:
 
@@ -67,17 +66,17 @@ extern "C" {
    VERTEX_LOW_RYW  - Y or on the external face path between vertices Y and W
 */
 
-#define TYPE_UNKNOWN            0
+#define TYPE_UNKNOWN 0
 
-#define EDGE_DFSCHILD           1
-#define EDGE_FORWARD            2
-#define EDGE_BACK               3
-#define EDGE_DFSPARENT          4
+#define EDGE_DFSCHILD 1
+#define EDGE_FORWARD 2
+#define EDGE_BACK 3
+#define EDGE_DFSPARENT 4
 
-#define VERTEX_HIGH_RXW         6
-#define VERTEX_LOW_RXW          7
-#define VERTEX_HIGH_RYW         8
-#define VERTEX_LOW_RYW          9
+#define VERTEX_HIGH_RXW 6
+#define VERTEX_LOW_RXW 7
+#define VERTEX_HIGH_RYW 8
+#define VERTEX_LOW_RYW 9
 
 /* Data members needed by vertices and edges
 
@@ -110,25 +109,24 @@ extern "C" {
                 consistent vertex orientation in each bicomp.
 */
 
-typedef struct
-{
-     int  v;
-     int  visited;
-     int  link[2];
-     int  type;
-     int  sign;
+typedef struct {
+  int v;
+  int visited;
+  int link[2];
+  int type;
+  int sign;
 } graphNode;
 
-typedef graphNode * graphNodeP;
+typedef graphNode *graphNodeP;
 
 /* Additional data members needed only by vertices
         DFSParent: The DFI of the DFS tree parent of this vertex
         leastAncestor: min(DFI of neighbors connected by backedge)
         Lowpoint: min(leastAncestor, min(Lowpoint of DFS Children))
         adjacentTo: Used by the embedder; during walk-up, each vertex that is
-                directly adjacent via a back edge to the vertex currently 
-                being embedded will have the forward edge's index stored in 
-                this field.  During walkdown, each vertex whose AdjacentTo 
+                directly adjacent via a back edge to the vertex currently
+                being embedded will have the forward edge's index stored in
+                this field.  During walkdown, each vertex whose AdjacentTo
                 field is set will cause a back edge to be embedded.
         pertinentBicompList: used by Walkup to store a list of child bicomps of
                 a vertex descendant of the current vertex that are pertinent
@@ -149,31 +147,29 @@ typedef graphNode * graphNodeP;
         fwdArcList: at the start of embedding, the back edges from a vertex
                 to its DFS descendants are separated from the main adjacency
                 list and placed in a circular list until they are embedded.
-                This member indicates a node in that list. 
+                This member indicates a node in that list.
 */
 
-typedef struct
-{
-        int DFSParent, leastAncestor, Lowpoint, adjacentTo;
-        int pertinentBicompList, separatedDFSChildList, fwdArcList;
+typedef struct {
+  int DFSParent, leastAncestor, Lowpoint, adjacentTo;
+  int pertinentBicompList, separatedDFSChildList, fwdArcList;
 } vertexRec;
 
-typedef vertexRec * vertexRecP;
+typedef vertexRec *vertexRecP;
 
 /* This structure defines a pair of links used by each vertex and root copy
-    to more efficiently traverse the external face. 
-    These also help in the creation of a planarity tester that does not need 
+    to more efficiently traverse the external face.
+    These also help in the creation of a planarity tester that does not need
     to embed the edges, which would be more efficient when one only needs to
-    know whether any of a give set of graphs is planar without justifying 
+    know whether any of a give set of graphs is planar without justifying
     the result. */
 
-typedef struct
-{
-    int link[2];
-    int inversionFlag;
+typedef struct {
+  int link[2];
+  int inversionFlag;
 } extFaceLinkRec;
 
-typedef extFaceLinkRec * extFaceLinkRecP;
+typedef extFaceLinkRec *extFaceLinkRecP;
 
 /* Flags for graph:
         FLAGS_DFSNUMBERED is set if DFSNumber() has succeeded for the graph
@@ -182,8 +178,8 @@ typedef extFaceLinkRec * extFaceLinkRecP;
                 SortVertices() toggle this bit.
 */
 
-#define FLAGS_DFSNUMBERED       1
-#define FLAGS_SORTEDBYDFI       2
+#define FLAGS_DFSNUMBERED 1
+#define FLAGS_SORTEDBYDFI 2
 
 /* Variables needed in embedding by Kuratowski subgraph isolator:
         minorType: the type of planarity obstruction found.
@@ -200,31 +196,30 @@ typedef extFaceLinkRec * extFaceLinkRecP;
                 ancestor of v
         dw: descendant endpoint in unembedded edge to v
         uz,dz: endpoints of unembedded edge that helps connext z with
-                ancestor of v (for minors B and E, not A, C, D). 
+                ancestor of v (for minors B and E, not A, C, D).
 */
 
-typedef struct
-{
-    int minorType;
-    int v, r, x, y, w, px, py, z;
-    int ux, dx, uy, dy, dw, uz, dz;
+typedef struct {
+  int minorType;
+  int v, r, x, y, w, px, py, z;
+  int ux, dx, uy, dy, dw, uz, dz;
 } isolatorContext;
 
-typedef isolatorContext * isolatorContextP;
+typedef isolatorContext *isolatorContextP;
 
-#define FLAGS_MINOR_A         1
-#define FLAGS_MINOR_B         2
-#define FLAGS_MINOR_C         4
-#define FLAGS_MINOR_D         8
-#define FLAGS_MINOR_E         16
-#define FLAGS_MINOR_E1        32
-#define FLAGS_MINOR_E2        64
-#define FLAGS_MINOR_E3        128
-#define FLAGS_MINOR_E4        256
+#define FLAGS_MINOR_A 1
+#define FLAGS_MINOR_B 2
+#define FLAGS_MINOR_C 4
+#define FLAGS_MINOR_D 8
+#define FLAGS_MINOR_E 16
+#define FLAGS_MINOR_E1 32
+#define FLAGS_MINOR_E2 64
+#define FLAGS_MINOR_E3 128
+#define FLAGS_MINOR_E4 256
 
-#define FLAGS_MINOR_E5        512
-#define FLAGS_MINOR_E6        1024
-#define FLAGS_MINOR_E7        2048
+#define FLAGS_MINOR_E5 512
+#define FLAGS_MINOR_E6 1024
+#define FLAGS_MINOR_E7 2048
 
 /* Container for graph functions
         G: Vertices stored at 0 to n-1, second vertex buffer at n to 2n-1,
@@ -234,8 +229,8 @@ typedef isolatorContext * isolatorContextP;
         M: Number of edges
         internalFlags: Additional state information about the graph
         embedFlags: controls type of embedding (e.g. planar)
-        IC: contains additional useful variables for Kuratowski subgraph isolation.
-        BicompLists: storage space for pertinent bicomp lists that develop
+        IC: contains additional useful variables for Kuratowski subgraph
+   isolation. BicompLists: storage space for pertinent bicomp lists that develop
                         during embedding
         DFSChildLists: storage space for separated DFS child lists that
                         develop during embedding
@@ -248,57 +243,59 @@ typedef isolatorContext * isolatorContextP;
                     of all vertices (see _CreateSortedSeparatedDFSChildLists())
 */
 
-typedef struct
-{
-        graphNodeP G;
-        vertexRecP V;
-        int N, M, internalFlags, embedFlags;
-        isolatorContext IC;
-        listCollectionP BicompLists, DFSChildLists;
-        stackP theStack;
-        int *buckets;
-        listCollectionP bin;
-        extFaceLinkRecP extFace;        
+typedef struct {
+  graphNodeP G;
+  vertexRecP V;
+  int N, M, internalFlags, embedFlags;
+  isolatorContext IC;
+  listCollectionP BicompLists, DFSChildLists;
+  stackP theStack;
+  int *buckets;
+  listCollectionP bin;
+  extFaceLinkRecP extFace;
 } BM_graph;
 
-typedef BM_graph * graphP;
+typedef BM_graph *graphP;
 
 /* Public functions for graphs */
 
 graphP gp_New(void);
-int    gp_InitGraph(graphP theGraph, int N);
-void   gp_ReinitializeGraph(graphP theGraph);
-int    gp_CopyGraph(graphP dstGraph, graphP srcGraph);
+int gp_InitGraph(graphP theGraph, int N);
+void gp_ReinitializeGraph(graphP theGraph);
+int gp_CopyGraph(graphP dstGraph, graphP srcGraph);
 graphP gp_DupGraph(graphP theGraph);
 
-int    gp_CreateRandomGraph(graphP theGraph);
-int    gp_CreateRandomGraphEx(graphP theGraph, int numEdges);
+int gp_CreateRandomGraph(graphP theGraph);
+int gp_CreateRandomGraphEx(graphP theGraph, int numEdges);
 
-void   gp_Free(graphP *pGraph);
+void gp_Free(graphP *pGraph);
 
-int    gp_Read(graphP theGraph, char *FileName);
-int    gp_Write(graphP theGraph, char *FileName, int Mode);
+int gp_Read(graphP theGraph, char *FileName);
+int gp_Write(graphP theGraph, char *FileName, int Mode);
+int gp_WriteStream(graphP theGraph, FILE* f, int Mode);
 
-int    gp_IsNeighbor(graphP theGraph, int u, int v);
-int    gp_GetVertexDegree(graphP theGraph, int v);
+int gp_IsNeighbor(graphP theGraph, int u, int v);
+int gp_GetVertexDegree(graphP theGraph, int v);
 
-int    gp_AddEdge(graphP theGraph, int u, int ulink, int v, int vlink);
-void   gp_HideEdge(graphP theGraph, int arcPos);
-void   gp_RestoreEdge(graphP theGraph, int arcPos);
-int    gp_DeleteEdge(graphP theGraph, int J, int nextLink);
+int gp_AddEdge(graphP theGraph, int u, int ulink, int v, int vlink);
+int gp_InsertArc(graphP theGraph, int u, int v, int uedge, int vedge, int ulink,
+                 int vlink);
+void gp_HideEdge(graphP theGraph, int arcPos);
+void gp_RestoreEdge(graphP theGraph, int arcPos);
+int gp_DeleteEdge(graphP theGraph, int J, int nextLink);
 
-int    gp_CreateDFSTree(graphP theGraph);
-int    gp_SortVertices(graphP theGraph);
-void   gp_LowpointAndLeastAncestor(graphP theGraph);
+int gp_CreateDFSTree(graphP theGraph);
+int gp_SortVertices(graphP theGraph);
+void gp_LowpointAndLeastAncestor(graphP theGraph);
 
-int    gp_Embed(graphP theGraph, int embedFlags);
+int gp_Embed(graphP theGraph, int embedFlags);
 
-int    gp_CheckEmbeddingIntegrity(graphP theGraph);
-int    gp_CheckKuratowskiSubgraphIntegrity(graphP theGraph);
+int gp_CheckEmbeddingIntegrity(graphP theGraph);
+int gp_CheckKuratowskiSubgraphIntegrity(graphP theGraph);
 
 #ifndef SPEED_MACROS
 
-int    gp_GetTwinArc(graphP theGraph, int Arc);
+int gp_GetTwinArc(graphP theGraph, int Arc);
 
 #else
 /********************************************************************
@@ -311,47 +308,47 @@ int    gp_GetTwinArc(graphP theGraph, int Arc);
  ********************************************************************/
 
 // The original, first definition appears to be the faster one
-#define gp_GetTwinArc(theGraph, Arc) ((Arc) & 1) ? Arc-1 : Arc+1
-//#define gp_GetTwinArc(theGraph, Arc) ((Arc)+1-(((Arc)&1)<<1))
+#define gp_GetTwinArc(theGraph, Arc) ((Arc) & 1) ? Arc - 1 : Arc + 1
+// #define gp_GetTwinArc(theGraph, Arc) ((Arc)+1-(((Arc)&1)<<1))
 
 #endif
 
 /* Possible Mode parameter of gp_Write */
 
-#define WRITE_ADJLIST   1
+#define WRITE_ADJLIST 1
 #define WRITE_ADJMATRIX 2
 #define WRITE_DEBUGINFO 3
 
 /* Possible Flags for gp_Embed */
 
-#define EMBEDFLAGS_PLANAR       1
+#define EMBEDFLAGS_PLANAR 1
 
-/* Private functions shared by modules in this implementation */ 
+/* Private functions shared by modules in this implementation */
 
-#define PERTINENT(theEmbedding, theVertex, I) \
-        (theEmbedding->V[theVertex].adjacentTo != NIL || \
-         theEmbedding->V[theVertex].pertinentBicompList != NIL ? 1 : 0)
+#define PERTINENT(theEmbedding, theVertex, I)                                  \
+  (theEmbedding->V[theVertex].adjacentTo != NIL ||                             \
+           theEmbedding->V[theVertex].pertinentBicompList != NIL               \
+       ? 1                                                                     \
+       : 0)
 
-#define EXTERNALLYACTIVE(theEmbedding, theVertex, I) \
-        (theEmbedding->V[theVertex].leastAncestor < I \
-         ? 1 \
-         : theEmbedding->V[theVertex].separatedDFSChildList != NIL && \
-           theEmbedding->V[theEmbedding->V[theVertex].separatedDFSChildList].Lowpoint < I \
-           ? 1 \
-           : 0)
+#define EXTERNALLYACTIVE(theEmbedding, theVertex, I)                           \
+  (theEmbedding->V[theVertex].leastAncestor < I ? 1                            \
+   : theEmbedding->V[theVertex].separatedDFSChildList != NIL &&                \
+           theEmbedding->V[theEmbedding->V[theVertex].separatedDFSChildList]   \
+                   .Lowpoint < I                                               \
+       ? 1                                                                     \
+       : 0)
 
 #ifndef SPEED_MACROS
 
-int  _VertexActiveStatus(graphP theEmbedding, int theVertex, int I);
+int _VertexActiveStatus(graphP theEmbedding, int theVertex, int I);
 
 #else
 
-#define _VertexActiveStatus(theEmbedding, theVertex, I) \
-        (EXTERNALLYACTIVE(theEmbedding, theVertex, I) \
-         ? VAS_EXTERNAL \
-         : PERTINENT(theEmbedding, theVertex, I) \
-           ? VAS_INTERNAL \
-           : VAS_INACTIVE)
+#define _VertexActiveStatus(theEmbedding, theVertex, I)                        \
+  (EXTERNALLYACTIVE(theEmbedding, theVertex, I) ? VAS_EXTERNAL                 \
+   : PERTINENT(theEmbedding, theVertex, I)      ? VAS_INTERNAL                 \
+                                                : VAS_INACTIVE)
 
 #endif
 
@@ -360,4 +357,3 @@ int  _VertexActiveStatus(graphP theEmbedding, int theVertex, int I);
 #endif
 
 #endif
-

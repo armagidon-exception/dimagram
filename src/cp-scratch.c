@@ -1,4 +1,4 @@
-#include "cp.h"
+/* #include "hs.h"
 #include "graph_utils.h"
 #include "igraph_constants.h"
 #include "igraph_conversion.h"
@@ -111,4 +111,4 @@ static void accumulateOffsets(gint v, gint d, mat *output, Tnode *Ls) {
     accumulateOffsets(Ls[v].fc, Ls[v].xo, output, Ls);
     accumulateOffsets(Ls[v].rs, Ls[v].xo, output, Ls);
   }
-}
+} */

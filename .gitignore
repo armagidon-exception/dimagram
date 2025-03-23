@@ -3,3 +3,4 @@ build/
 *.svg
 *.pdf
 .cache/
+*.txt

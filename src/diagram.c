@@ -1,7 +1,7 @@
 #include "diagram.h"
 #include "arena.h"
 #include "cairo.h"
-#include "cp.h"
+#include "hs.h"
 #include "dynarray.h"
 #include "graph_utils.h"
 #include "igraph_components.h"

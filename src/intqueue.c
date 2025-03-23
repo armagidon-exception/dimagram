@@ -1,9 +1,10 @@
 #include "intqueue.h"
 #include "log.h"
 #include "utils.h"
+#include <signal.h>
+#include <signal.h>
 #include <stdlib.h>
 #define STRICT_BOUNDS
-
 
 #define QUEUE_TAIL(q) ((q)->queue[(q)->cap + 1].head)
 #define QUEUE_HEAD(q) ((q)->queue[0].tail)
@@ -26,12 +27,17 @@ void intqueue_init(intqueue_t *queue, Arena *arena, gint N) {
 
 void intqueue_enqueue(intqueue_t *queue, gint value) {
   assert(queue && "Queue is null");
-  assert(queue->cap + 2 > value && "Index out out bounds");
 #ifndef STRICT_BOUNDS
-  if (INT_QUEUE(queue)[value].present) {
+  if (queue->cap + 2 > value) {
+    log_error("Index out of bounds %ld", value);
+    return;
+  }
+  if (INT_QUEUE(queue)[value + 1].present) {
+    log_error("%d is present", value);
     return;
   }
 #else
+  assert(queue->cap + 2 > value && "Index out out bounds");
   if (queue->queue[value + 1].present) {
     log_error("Value %ld is already present", value);
     abort();
@@ -52,9 +58,12 @@ gint intqueue_dequeue(intqueue_t *queue) {
   assert(queue && "Queue is null");
 #ifdef STRICT_BOUNDS
   // assert(queue->queue[QUEUE_HEAD(queue)].present && "Not present");
+  if (!queue->N) {
+    raise(SIGSEGV);
+  }
   assert(queue->N && "Queue is empty");
 #else
-  if (queue->N)
+  if (!queue->N)
     return -1;
 #endif
   gint output = QUEUE_HEAD(queue) - 1;
@@ -64,8 +73,8 @@ gint intqueue_dequeue(intqueue_t *queue) {
 
 gint intqueue_pull(intqueue_t *queue, gint value) {
   assert(queue->cap + 2 > value + 1 && "Index out out bounds");
-#ifdef STRICT_BOUNDS
   gint index = value + 1;
+#ifdef STRICT_BOUNDS
 
   if (!queue->queue[index].present) {
     log_debug("Element %ld is not present", value);
@@ -73,8 +82,10 @@ gint intqueue_pull(intqueue_t *queue, gint value) {
   }
   // assert(queue->queue[value + 1].present && "Element is not present");
 #else
-  if (!INT_QUEUE(queue)[value].present)
+  if (!INT_QUEUE(queue)[index].present) {
+    log_debug("Element %ld is not present", value);
     return -1;
+  }
 #endif
 
   queue->queue[index].present = false;
@@ -91,8 +102,7 @@ gint intqueue_pull(intqueue_t *queue, gint value) {
 }
 
 void intqueue_print(intqueue_t *queue) {
-  log_debug("head=%ld, tail=%ld", intqueue_peek(queue),
-            intqueue_rpeek(queue));
+  log_debug("head=%ld, tail=%ld", intqueue_peek(queue), intqueue_rpeek(queue));
   for (gint cur = QUEUE_HEAD(queue); cur != queue->cap + 1;
        cur = queue->queue[cur].tail) {
     if (!queue->queue[cur].present) {
@@ -108,7 +118,6 @@ gint intqueue_rpeek(intqueue_t *queue) {
   return queue->queue[queue->cap + 1].head - 1;
 }
 
-
-intqueue_entry_t* intqueue_get(intqueue_t* queue, gint i) {
+intqueue_entry_t *intqueue_get(intqueue_t *queue, gint i) {
   return &queue->queue[i + 1];
 }

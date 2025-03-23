@@ -1,8 +1,9 @@
-#include "cp.h"
+#include "hs.h"
 #include "arena.h"
 #include "boyer/graph.h"
 #include "dynarray.h"
 #include "graph_utils.h"
+#include "hs-utils.h"
 #include "igraph_components.h"
 #include "igraph_conversion.h"
 #include "igraph_datatype.h"
@@ -84,6 +85,9 @@ static hs_error_t canonical_ordering(igraph_t *graph, embedding_t *em,
                                      co_t *output);
 static inline void rightHandWalk(const embedding_t *em, rhw_result_t *result,
                                  Arena *arena);
+
+static inline void leftHandWalk(const embedding_t *em, rhw_result_t *result,
+                                Arena *arena);
 static void updateVertex(gint v, co_state *state, embedding_t *em);
 static inline void findInterval(const embedding_t *em, const bool *inGk, gint v,
                                 gint *start, gint *end);
@@ -98,130 +102,10 @@ static inline bool hasEdge(const igraph_t *G, gint v, gint w);
 static void accumulateOffsets(gint v, gint d, mat *output, Tnode *Ls);
 static inline gint findEdge(const embedding_t *em, gint source, gint dest);
 
-static hs_error_t canonical_ordering(igraph_t *g, embedding_t *em,
-                                     co_t *output) {
-  co_state state;
-  state.G = g;
-  Arena co_arena = {0};
-  Arena *arenaP = &co_arena;
-
-  // Init embedding
-  switch (init_embedding(g, em, arenaP)) {
-  case 1:
-    arena_free(arenaP);
-    return HS_DISCONNECTED;
-  case 2:
-    arena_free(arenaP);
-    return HS_NONPLANAR;
-  }
-
-  state.inGk = arena_calloc(arenaP, UCAST(em->N), sizeof(bool));
-
-  // log_debug("right hand walk");
-  rhw_result_init(arenaP, em->M, &state.rhw);
-
-  rightHandWalk(em, &state.rhw, arenaP);
-
-  // log_debug("Faces");
-  // for (int i = 0; i < SCAST(state.rhw.faces.N); i++) {
-  //   printf("%d ", i);
-  //   printFace(&state.rhw.faces, state.rhw.edges, em, i);
-  // }
-
-  // Array of flags that indicate wether a vertex is in Gk to avoid looping over
-  // the output array
-  // Initialize A, N, F to 0
-  state.A = arena_calloc(arenaP, state.rhw.faces.N, sizeof(int));
-  state.N = arena_calloc(arenaP, UCAST(em->N), sizeof(int));
-  state.F = arena_calloc(arenaP, UCAST(em->N), sizeof(int));
-
-  gint extFaceEdge = findExteriorEdge(em);
-  // Pick edge (v1, v2) on the boundary of exterior face of G
-  gint v1 = EDGE_SOURCE(*em, extFaceEdge);
-  gint v2 = EDGE_TARGET(*em, extFaceEdge);
-  // Add its endpoints to output array
-  co_push(output, v1);
-  co_push(output, v2);
-  state.inGk[v1] = true;
-  state.inGk[v2] = true;
-  state.N[v1]++;
-  state.N[v2]++;
-
-  intqueue_init(&state.ready_queue, arenaP, em->N);
-
-  // Update their neighbours as in (1)
-  for (int i = 0; i < SCAST(output->N); i++) {
-    gint v = output->array[i];
-    updateVertex(v, &state, em);
-  }
-  // log_debug("ready queue N=%ld", state.ready_queue.N);
-
-  // Set A[f] to 1 of f, the left face of (v1, v2).
-  gint fi = AS_FACEEDGE(state.rhw, extFaceEdge).leftface;
-  state.A[fi] = 1;
-  // log_debug("Face %ld is now in G_k", fi);
-  // printFace(&state.rhw.faces, state.rhw.edges, em, fi);
-
-  // If f is a triangle set F(v3) to 1 since it ready.
-  gint v3 = EDGE_TARGET(*em, AS_FACEEDGE(state.rhw, extFaceEdge ^ 1).next);
-  gint v3p = EDGE_SOURCE(*em, AS_FACEEDGE(state.rhw, extFaceEdge ^ 1).prev);
-  // log_debug("v_3 = %ld, v'_3 = %ld", v3, v3p);
-  if (v3 == v3p) {
-    state.F[v3] = 1;
-    intqueue_enqueue(&state.ready_queue, v3);
-    // log_debug("f is a triangle. Push on the ready queue: N=%ld",
-    //           state.ready_queue.N);
-  }
-
-  // log_debug("External face");
-  // printFace(&state.rhw.faces, state.rhw.edges, em,
-  //           state.rhw.edges[extFaceEdge ^ 1].leftface);
-
-  // for (int i = 0; i < state.rhw.faces.N; i++) {
-  //   printFace(&state.rhw.faces, state.rhw.edges, &em, i);
-  //
-  //   for (int j = 0; j < SCAST(FACE(state.rhw.faces, i).N); j++) {
-  //     face_edge_t fe = state.rhw.edges[FACE(state.rhw.faces, i).array[j]];
-  //     log_debug("face=%ld", fe.leftface);
-  //     log_debug("edge=%ld", fe.eid);
-  //   }
-  // }
-
-  // intqueue_print(&state.ready_queue);
-
-  for (int k = 2; k < em->N; k++) {
-    // log_debug("k=%ld", k);
-    gint vk = intqueue_dequeue(&state.ready_queue);
-    // log_debug("vk=%ld", vk);
-    co_push(output, vk);
-    state.inGk[vk] = true;
-
-    updateVertex(vk, &state, em);
-
-    gint start, end;
-    findInterval(em, state.inGk, vk, &start, &end);
-    assert(start >= 0 && end >= 0);
-    // log_debug("Inverval found start=%ld, end=%ld", em->edges[start].neighbor,
-    //           em->edges[end].neighbor);
-    gint f1 = AS_FACEEDGE(state.rhw, start).leftface;
-    gint fp1 = AS_FACEEDGE(state.rhw, end ^ 1).leftface;
-    // log_debug("f_1 = %ld, f_p+1=%ld", f1, fp1);
-    assert(f1 >= 0);
-    assert(fp1 >= 0);
-    state.A[f1]++;
-    state.A[fp1]++;
-    // log_debug("A[f_1]=%ld, A[f_p+1]=%ld", state.A[f1], state.A[fp1]);
-    updateFace(&state, em, f1);
-    updateFace(&state, em, fp1);
-  }
-
-  arena_free(arenaP);
-  return HS_OK;
-}
-
 static void rightHandWalk(const embedding_t *em, rhw_result_t *result,
                           Arena *arena) {
   gint toVisit = em->M;
+  // log_debug("edges=%ld", toVisit);
   intqueue_t queue;
   intqueue_init(&queue, arena, em->M);
 
@@ -258,56 +142,113 @@ static void rightHandWalk(const embedding_t *em, rhw_result_t *result,
   }
 }
 
+static void leftHandWalk(const embedding_t *em, rhw_result_t *result,
+                         Arena *arena) {
+  gint toVisit = em->M;
+  // log_debug("edges=%ld", toVisit);
+  intqueue_t queue;
+  intqueue_init(&queue, arena, em->M);
+
+  // Enqueue
+  for (int eid = 0; eid < em->M; eid++) {
+    intqueue_enqueue(&queue, eid);
+    result->edges[eid].eid = eid;
+    result->edges[eid].leftface = -1;
+  }
+
+  while (toVisit > 0) {
+    gint start = intqueue_peek(&queue);
+    face_edge_list_t face;
+    face_edge_list_init(&face, arena);
+    gint current = start;
+    do {
+      gint next = em->edges[current ^ 1].link[1];
+      result->edges[next].leftface = SCAST(result->faces.N); // Set left face.
+      result->edges[next].prev = current;
+      result->edges[current].next = next;
+
+      face_edge_list_push(&face, current);
+
+      // If edge is not visited, remove from visit queue
+      toVisit--;
+
+      assert(toVisit >= 0);
+      intqueue_pull(&queue, next);
+      current = next;
+    } while (current != start);
+
+    face_list_push(&result->faces, face);
+  }
+}
+
 static void updateVertex(gint v, co_state *state, embedding_t *em) {
-  // log_debug("==========UPDATE VERTEX==========");
-  // log_debug("Vertex v=%ld is being updated.", v);
+  log_debug("==========UPDATE VERTEX==========");
+  log_debug("Vertex v=%ld is being updated.", v);
   gint current = em->vertices[v][1];
+  gint externalEdge = findExteriorEdge(em);
+  gint co0 = EDGE_SOURCE(*em, externalEdge);
+  gint co1 = EDGE_TARGET(*em, externalEdge);
   do {
     em_edge edge = em->edges[current];
     gint w = edge.neighbor;
-    // log_debug("Inspecting neighbour w=%ld", w);
+    log_debug("Inspecting neighbour w=%ld", w);
     if (!state->inGk[w]) {
-      // log_debug("w is not in the G_k yet.");
+      log_debug("w is not in the G_k yet.");
       state->N[w]++;
-      // log_debug("w now has N[w] = %ld neighbours in G_k", state->N[w]);
+      log_debug("w now has N[w] = %ld neighbours in G_k", state->N[w]);
       if (intqueue_get(&state->ready_queue, w)->present) {
-        // log_debug("w was already in ready queue. Pulling from ready queue");
+        log_debug("w was already in ready queue. Pulling from ready queue");
         intqueue_pull(&state->ready_queue, w);
       } else {
-        // log_debug("w was not in the ready queue");
+        log_debug("w was not in the ready queue");
       }
 
       if (state->N[w] == 1) {
-        // log_debug("w has a singular neighbour in G_k");
+        log_debug("w has a singular neighbour in G_k");
         gint left = AS_EMEDGE(*em, edge.link[0]).neighbor;
         gint right = AS_EMEDGE(*em, edge.link[1]).neighbor;
-        // log_debug("w_i-1 = %ld, w_i+1=%ld", left, right);
+        log_debug("w_i-1 = %ld, w_i+1=%ld", left, right);
         assert(left >= 0);
         assert(right >= 0);
-        if (state->inGk[left] || state->inGk[right]) {
-          // log_debug("One of them forms legal support. Pushing to ready
-          // queue");
+        if (v == co0) {
+          log_debug("%ld is the start of contour.", v);
+          if (state->inGk[right]) {
+            log_debug("Neighbour has right support. Pushing to ready queue");
+            intqueue_enqueue(&state->ready_queue, w);
+          } else {
+            log_debug("w has no legal support.");
+          }
+        } else if (v == co1) {
+          log_debug("%ld is the end of contour.", v);
+          if (state->inGk[left]) {
+            log_debug("Neighbour has left support. Pushing to ready queue");
+            intqueue_enqueue(&state->ready_queue, w);
+          } else {
+            log_debug("w has no legal support.");
+          }
+        } else if (state->inGk[left] || state->inGk[right]) {
+          log_debug("One of them forms legal support. Pushing to ready queue");
           intqueue_enqueue(&state->ready_queue, w);
         } else {
-          // log_debug("w has no legal support.");
+          log_debug("w has no legal support.");
         }
       } else {
-        // log_debug("N[w]=%ld", state->N[w]);
+        log_debug("N[w]=%ld", state->N[w]);
       }
     } else {
-      // log_debug("w is in Gk");
+      log_debug("w is in Gk");
     }
 
     current = edge.link[1];
   } while (current != em->vertices[v][1]);
 
-  // log_debug("==========UPDATE VERTEX==========");
+  log_debug("==========UPDATE VERTEX==========");
 }
 
 static void findInterval(const embedding_t *em, const bool *inGk, gint v,
                          gint *start, gint *end) {
   assert(v >= 0);
-  // log_debug("Finding interval for %ld", v);
+  log_debug("Finding interval for %ld", v);
 
   gint extEdge = findExteriorEdge(em);
   *start = -1, *end = -1;
@@ -332,7 +273,7 @@ static void findInterval(const embedding_t *em, const bool *inGk, gint v,
   } while (current != (extEdge ^ 1));
 start_done:
   assert(*start >= 0);
-  // log_debug("start=%ld", *start);
+  log_debug("start=%ld", *start);
 
   current = em->edges[extEdge ^ 1].link[0];
   do {
@@ -354,7 +295,7 @@ start_done:
   } while (current != (extEdge));
 end_done:
   assert(*end >= 0);
-  // log_debug("end=%ld", *end);
+  log_debug("end=%ld", *end);
 }
 
 static void rhw_result_init(Arena *arena, gint M, rhw_result_t *result) {
@@ -362,29 +303,8 @@ static void rhw_result_init(Arena *arena, gint M, rhw_result_t *result) {
   face_list_init(&result->faces, arena);
 }
 
-static int init_embedding(igraph_t *g, embedding_t *em, Arena *arena) {
-
-  bool connected;
-  igraph_is_connected(g, &connected, IGRAPH_WEAK);
-  if (!connected) {
-    return 1;
-  }
-
-  BM_graph *G = gp_New();
-  gp_InitGraph(G, (int)igraph_vcount(g));
-  for (gint i = 0; i < igraph_ecount(g); i++) {
-    gint v, w;
-    igraph_edge(g, i, &v, &w);
-    gp_AddEdge(G, (int)v, 0, (int)w, 0);
-  }
-  if (gp_Embed(G, EMBEDFLAGS_PLANAR) || gp_SortVertices(G)) {
-    gp_Free(&G);
-    return 2;
-  }
-
-#define TRICONNECT 0
-
-#if TRICONNECT == 1
+static bool triconnect(igraph_t *g, graphP G) {
+  bool augmented = false;
   for (int vi = 0; vi < igraph_vcount(g); vi++) {
     gint edge1 = G->G[vi].link[0];
     do {
@@ -396,86 +316,49 @@ static int init_embedding(igraph_t *g, embedding_t *em, Arena *arena) {
       if (!hasEdge(g, n1, n2)) {
         gp_AddEdge(G, n1, 0, n2, 0);
         igraph_add_edge(g, n1, n2);
-
-        log_debug("Augmented edge between %d and %d", n1, n2);
+        augmented = true;
+        // log_debug("Augmented edge between %d and %d", n1, n2);
       }
     } while (edge1 != G->G[vi].link[0]);
   }
 
-  gp_ReinitializeGraph(G);
+  igraph_simplify(g, true, true, 0);
+  return augmented;
+}
 
-  gp_Free(&G);
-  G = gp_New();
-  gp_InitGraph(G, (int)igraph_vcount(g));
-  for (gint i = 0; i < igraph_ecount(g); i++) {
-    gint v, w;
-    igraph_edge(g, i, &v, &w);
-    gp_AddEdge(G, (int)v, 0, (int)w, 0);
+static int init_embedding(igraph_t *g, embedding_t *em, Arena *arena) {
+
+  int status;
+  bool connected;
+  igraph_is_connected(g, &connected, IGRAPH_WEAK);
+  if (!connected) {
+    return 1;
   }
-  if (gp_Embed(G, EMBEDFLAGS_PLANAR) || gp_SortVertices(G)) {
+
+  BM_graph *G = gp_New();
+  gp_InitGraph(G, (int)igraph_vcount(g));
+  hs_copy_from_igraph(g, G);
+
+  if ((status = gp_Embed(G, EMBEDFLAGS_PLANAR)) != OK || gp_SortVertices(G)) {
     gp_Free(&G);
     return 2;
   }
-#endif
 
-#if TRICONNECT == 0
   bool biconnected;
   igraph_is_biconnected(g, &biconnected);
   if (!biconnected) {
-    veci bicomN;
-    igraph_vector_int_init(&bicomN, igraph_vcount(g));
-    veci cutvertices = veci_new();
-    vec2int comps = vec2int_new();
-
-    igraph_biconnected_components(g, 0, 0, 0, &comps, &cutvertices);
-    for (int comp = 0; comp < igraph_vector_int_list_size(&comps); comp++) {
-      veci *component = igraph_vector_int_list_get_ptr(&comps, comp);
-      for (int vi = 0; vi < vector_size(component); vi++) {
-        vecget(bicomN, vecget(*component, vi)) = comp;
-      }
-    }
-
-    for (int vi = 0; vi < vector_size(&cutvertices); vi++) {
-
-      gint edge1 = G->G[vecget(cutvertices, vi)].link[0];
-
-      do {
-        edge1 = G->G[edge1].link[0];
-        gint edge2 = G->G[edge1].link[0];
-        int n1 = G->G[edge1].v;
-        int n2 = G->G[edge2].v;
-
-        if (vecget(bicomN, n1) != vecget(bicomN, n2)) {
-          if (!hasEdge(g, n1, n2)) {
-            gp_AddEdge(G, n1, 0, n2, 0);
-            igraph_add_edge(g, n1, n2);
-            log_debug("Augmented edge between %d and %d", n1, n2);
-          }
-          // gp_AddEdge(G, (int)n1, 0, (int)n2, 0);
-        }
-      } while (edge1 != G->G[vecget(cutvertices, vi)].link[0]);
-    }
-
-    gp_ReinitializeGraph(G);
-
-    veci_dest(&bicomN);
-    veci_dest(&cutvertices);
-    vec2int_dest(&comps);
-
-    gp_Free(&G);
-    G = gp_New();
-    gp_InitGraph(G, (int)igraph_vcount(g));
-    for (gint i = 0; i < igraph_ecount(g); i++) {
-      gint v, w;
-      igraph_edge(g, i, &v, &w);
-      gp_AddEdge(G, (int)v, 0, (int)w, 0);
-    }
-    if (gp_Embed(G, EMBEDFLAGS_PLANAR) || gp_SortVertices(G)) {
-      gp_Free(&G);
-      return 2;
-    }
+    status = hs_graph_biconnect(g, G);
   }
-#endif
+
+  gp_ReinitializeGraph(G);
+  hs_copy_from_igraph(g, G);
+
+  status = gp_Embed(G, EMBEDFLAGS_PLANAR);
+  if (status != OK) {
+    gp_Free(&G);
+    return 2;
+  }
+  status = gp_SortVertices(G);
 
   em->N = igraph_vcount(g);
   em->M = 2 * igraph_ecount(g);
@@ -483,7 +366,7 @@ static int init_embedding(igraph_t *g, embedding_t *em, Arena *arena) {
   em->vertices = arena_calloc(arena, UCAST(em->N), sizeof(em_vertex));
   em->degrees = arena_calloc(arena, UCAST(em->N), sizeof(gint));
 
-  // gp_Write(G, "stdout", WRITE_ADJLIST);
+  gp_Write(G, "stdout", WRITE_ADJLIST);
 
   em->M = 2 * G->M;
   gint C = 2 * em->N;
@@ -503,11 +386,11 @@ static int init_embedding(igraph_t *g, embedding_t *em, Arena *arena) {
     em->edges[eid] = (em_edge){{link0 - C, link1 - C}, edge.v};
   }
 
-  // gint edge1 = em->vertices[0][0];
-  // gint edge2 = em->vertices[0][1];
+  gint edge1 = em->vertices[0][0];
+  gint edge2 = em->vertices[0][1];
 
-  // log_debug("n1=%ld, n2=%ld", em->edges[edge1].neighbor,
-  //           em->edges[edge2].neighbor);
+  log_debug("n1=%ld, n2=%ld", em->edges[edge1].neighbor,
+            em->edges[edge2].neighbor);
 
   gp_Free(&G);
   return 0;
@@ -516,32 +399,32 @@ static int init_embedding(igraph_t *g, embedding_t *em, Arena *arena) {
 #define FACE(facelist, face) ((facelist).array[face])
 
 static void updateFace(co_state *state, const embedding_t *em, gint fi) {
-  // log_debug("==========UPDATE FACE==========");
-  // log_debug("face=%ld", fi);
+  log_debug("==========UPDATE FACE==========");
+  log_debug("face=%ld", fi);
   face_edge_list_t *face = &FACE(state->rhw.faces, fi);
   gint edge_count = SCAST(face->N);
-  // log_debug("edge_count=%ld", edge_count);
-  // log_debug("A[f]=%ld", state->A[fi]);
+  log_debug("edge_count=%ld", edge_count);
+  log_debug("A[f]=%ld", state->A[fi]);
   if (state->A[fi] == edge_count - 2) {
-    // log_debug("face is ready");
+    log_debug("face is ready");
     for (int i = 0; i < edge_count; i++) {
       gint v = EDGE_TARGET(*em, face->array[i]);
-      // log_debug("Vertex on the face %ld", v);
+      log_debug("Vertex on the face %ld", v);
       if (!state->inGk[v]) {
-        // log_debug("Found vertex not in G_k");
+        log_debug("Found vertex not in G_k");
         state->F[v]++;
-        // log_debug("Vertex now has %ld ready faces", state->F[v]);
+        log_debug("Vertex now has %ld ready faces", state->F[v]);
         if (state->N[v] == state->F[v] + 1) {
-          // log_debug("All faces are ready");
+          log_debug("All faces are ready");
           intqueue_enqueue(&state->ready_queue, v);
         }
         break;
       }
     }
   } else {
-    // log_debug("Face %ld is not ready", fi);
+    log_debug("Face %ld is not ready", fi);
   }
-  // log_debug("==========UPDATE FACE==========");
+  log_debug("==========UPDATE FACE==========");
 }
 
 static void accumulateOffsets(gint v, gint d, mat *output, Tnode *Ls) {
@@ -586,6 +469,21 @@ static bool hasEdge(const igraph_t *G, gint v, gint w) {
   gint eid;
   igraph_get_eid(G, &eid, v, w, IGRAPH_DIRECTED, false);
   return eid >= 0;
+}
+
+static void findContourNeighbours(igraph_t *g, Tnode *tree, gint co0, gint co1,
+                                  gint v, gint *p, gint *q) {
+  gint pp = co0, qq = co1;
+  while (!hasEdge(g, pp, v)) {
+    pp = tree[pp].right_child;
+  }
+
+  while (!hasEdge(g, qq, v)) {
+    qq = tree[qq].parent;
+  }
+
+  *p = pp;
+  *q = qq;
 }
 
 #ifndef HS_TEST_ENV
@@ -657,13 +555,8 @@ hs_error_t harel_sardes_layout(igraph_t *G, igraph_matrix_t *output) {
     gint vk = CO(k);
 
     // Aquire neighbours on the contour
-    gint start_interval, end_interval;
-    findInterval(&em, inGk, vk, &start_interval, &end_interval);
-    start_interval ^= 1;
-    end_interval ^= 1;
-
-    gint p = em.edges[start_interval].neighbor;
-    gint q = em.edges[end_interval].neighbor;
+    gint p, q;
+    findContourNeighbours(G, Ls, CO(0), CO(1), vk, &p, &q);
     gint prev_q = Ls[q].parent;
     // gint prev_q = em.edges[em.edges[end_interval ^ 1].link[0]].neighbor;
 
@@ -676,7 +569,8 @@ hs_error_t harel_sardes_layout(igraph_t *G, igraph_matrix_t *output) {
         p = prev_q;
         q = temp;
       } else {
-        em_edge edge = em.edges[start_interval ^ 1];
+        em_edge edge = em.edges[findEdge(&em, p, vk)];
+        // em_edge edge = em.edges[start_interval ^ 1];
         gint left = AS_EMEDGE(em, edge.link[0]).neighbor;
         gint right = AS_EMEDGE(em, edge.link[1]).neighbor;
         if (left == prev_q) {
@@ -686,11 +580,11 @@ hs_error_t harel_sardes_layout(igraph_t *G, igraph_matrix_t *output) {
         } else if (right == NEXT(p)) {
           q = NEXT(p);
           prev_q = p;
-        } else if (inGk[left]){
+        } else if (inGk[left]) {
           gint temp = p;
           p = prev_q;
           q = temp;
-        } else if (inGk[right]){
+        } else if (inGk[right]) {
           q = NEXT(p);
           prev_q = p;
         } else {
@@ -698,7 +592,7 @@ hs_error_t harel_sardes_layout(igraph_t *G, igraph_matrix_t *output) {
               "Error at embedding legal support: vertex has no legal support");
           log_error("vk=%ld", vk);
           log_error("left=%d,right;=%ld", left, right);
-          log_error("prev=%ld,w_p=%ld,next=%ld", prev_q,p, NEXT(p));
+          log_error("prev=%ld,w_p=%ld,next=%ld", prev_q, p, NEXT(p));
           abort();
         }
       }
@@ -744,3 +638,208 @@ hs_error_t harel_sardes_layout(igraph_t *G, igraph_matrix_t *output) {
 }
 
 #endif
+
+static hs_error_t canonical_ordering(igraph_t *g, embedding_t *em,
+                                     co_t *output) {
+  co_state state;
+  state.G = g;
+  Arena co_arena = {0};
+  Arena *arenaP = &co_arena;
+
+  // Init embedding
+  switch (init_embedding(g, em, arenaP)) {
+  case 1:
+    arena_free(arenaP);
+    return HS_DISCONNECTED;
+  case 2:
+    arena_free(arenaP);
+    return HS_NONPLANAR;
+  }
+
+  state.inGk = arena_calloc(arenaP, UCAST(em->N), sizeof(bool));
+
+  // log_debug("right hand walk");
+  rhw_result_init(arenaP, em->M, &state.rhw);
+
+  leftHandWalk(em, &state.rhw, arenaP);
+
+  // log_debug("Faces");
+  for (int i = 0; i < SCAST(state.rhw.faces.N); i++) {
+    printf("%d ", i);
+    printFace(&state.rhw.faces, state.rhw.edges, em, i);
+  }
+
+  // Array of flags that indicate wether a vertex is in Gk to avoid looping over
+  // the output array
+  // Initialize A, N, F to 0
+  state.A = arena_calloc(arenaP, state.rhw.faces.N, sizeof(int));
+  state.N = arena_calloc(arenaP, UCAST(em->N), sizeof(int));
+  state.F = arena_calloc(arenaP, UCAST(em->N), sizeof(int));
+
+  gint extFaceEdge = findExteriorEdge(em);
+
+  log_debug("External face");
+  printFace(&state.rhw.faces, state.rhw.edges, em,
+            state.rhw.edges[extFaceEdge].leftface);
+  log_debug("(%ld, %ld)", EDGE_SOURCE(*em, extFaceEdge),
+            EDGE_TARGET(*em, extFaceEdge));
+
+  // Pick edge (v1, v2) on the boundary of exterior face of G
+  gint v1 = EDGE_SOURCE(*em, extFaceEdge);
+  gint v2 = EDGE_TARGET(*em, extFaceEdge);
+  // Add its endpoints to output array
+  co_push(output, v1);
+  co_push(output, v2);
+  state.inGk[v1] = true;
+  state.inGk[v2] = true;
+  state.N[v1]++;
+  state.N[v2]++;
+
+  intqueue_init(&state.ready_queue, arenaP, em->N);
+
+  // Update their neighbours as in (1)
+  for (int i = 0; i < SCAST(output->N); i++) {
+    gint v = output->array[i];
+    updateVertex(v, &state, em);
+  }
+  log_debug("ready queue N=%ld", state.ready_queue.N);
+
+  // Set A[f] to 1 of f, the left face of (v1, v2).
+  gint fi = AS_FACEEDGE(state.rhw, extFaceEdge).leftface;
+  state.A[fi] = 1;
+  log_debug("Face %ld is now in G_k", fi);
+  printFace(&state.rhw.faces, state.rhw.edges, em, fi);
+
+  // If f is a triangle set F(v3) to 1 since it ready.
+  gint v3 = EDGE_TARGET(*em, AS_FACEEDGE(state.rhw, extFaceEdge).next);
+  gint v3p = EDGE_SOURCE(*em, AS_FACEEDGE(state.rhw, extFaceEdge).prev);
+  log_debug("v_3 = %ld, v'_3 = %ld", v3, v3p);
+  if (v3 == v3p) {
+    state.F[v3] = 1;
+    intqueue_enqueue(&state.ready_queue, v3);
+    log_debug("f is a triangle. Push on the ready queue: N=%ld",
+              state.ready_queue.N);
+  }
+
+  // for (int i = 0; i < state.rhw.faces.N; i++) {
+  //   printFace(&state.rhw.faces, state.rhw.edges, &em, i);
+  //
+  //   for (int j = 0; j < SCAST(FACE(state.rhw.faces, i).N); j++) {
+  //     face_edge_t fe = state.rhw.edges[FACE(state.rhw.faces, i).array[j]];
+  //     log_debug("face=%ld", fe.leftface);
+  //     log_debug("edge=%ld", fe.eid);
+  //   }
+  // }
+
+  // intqueue_print(&state.ready_queue);
+
+  for (int k = 2; k < em->N; k++) {
+    log_debug("k=%ld", k);
+    gint vk = intqueue_dequeue(&state.ready_queue);
+    log_debug("vk=%ld", vk);
+    co_push(output, vk);
+    state.inGk[vk] = true;
+
+    updateVertex(vk, &state, em);
+
+    gint start, end;
+    findInterval(em, state.inGk, vk, &start, &end);
+    assert(start >= 0 && end >= 0);
+    log_debug("Inverval found start=%ld, end=%ld", em->edges[start].neighbor,
+              em->edges[end].neighbor);
+    gint f1 = AS_FACEEDGE(state.rhw, start).leftface;
+    gint fp1 = AS_FACEEDGE(state.rhw, end ^ 1).leftface;
+    gint n1 = em->edges[start].neighbor;
+    gint n2 = em->edges[end].neighbor;
+    log_debug("f_1 = %ld, f_p+1=%ld", f1, fp1);
+    assert(f1 >= 0);
+    assert(fp1 >= 0);
+    if (n1 != n2) {
+      state.A[f1]++;
+      state.A[fp1]++;
+      log_debug("A[f_1]=%ld, A[f_p+1]=%ld", state.A[f1], state.A[fp1]);
+      updateFace(&state, em, f1);
+      updateFace(&state, em, fp1);
+    } else {
+      if (f1 != state.rhw.edges[extFaceEdge ^ 1].leftface) {
+        state.A[f1]++;
+        log_debug("A[f_1]=%ld, A[f_p+1]=%ld", state.A[f1], state.A[fp1]);
+        updateFace(&state, em, f1);
+      }
+
+      if (fp1 != state.rhw.edges[extFaceEdge ^ 1].leftface) {
+        state.A[fp1]++;
+        log_debug("A[f_1]=%ld, A[f_p+1]=%ld", state.A[f1], state.A[fp1]);
+        updateFace(&state, em, fp1);
+      }
+    }
+
+    if (!state.ready_queue.N) {
+
+      for (int v = 0; v < em->N; v++) {
+        if (!state.inGk[v]) {
+          continue;
+        }
+
+        gint current = em->vertices[v][1];
+        do {
+          em_edge edge = em->edges[current];
+          gint w = edge.neighbor;
+          log_debug("Inspecting neighbour w=%ld", w);
+          if (!state.inGk[w]) {
+            log_debug("w is not in the G_k yet.");
+            log_debug("w now has N[w] = %ld neighbours in G_k", state.N[w]);
+
+            if (state.N[w] == 1) {
+              log_debug("w has a singular neighbour in G_k");
+              gint left = AS_EMEDGE(*em, edge.link[0]).neighbor;
+              gint right = AS_EMEDGE(*em, edge.link[1]).neighbor;
+              log_debug("w_i-1 = %ld, w_i+1=%ld", left, right);
+              assert(left >= 0);
+              assert(right >= 0);
+              if (v == v1) {
+                log_debug("%ld is the start of contour.", v);
+                if (state.inGk[right]) {
+                  log_debug(
+                      "Neighbour has right support. Pushing to ready queue");
+                  intqueue_enqueue(&state.ready_queue, w);
+                  goto next_iter;
+                } else {
+                  log_debug("w has no legal support.");
+                }
+              } else if (v == v2) {
+                log_debug("%ld is the end of contour.", v);
+                if (state.inGk[left]) {
+                  log_debug(
+                      "Neighbour has left support. Pushing to ready queue");
+                  intqueue_enqueue(&state.ready_queue, w);
+                  goto next_iter;
+                } else {
+                  log_debug("w has no legal support.");
+                }
+              } else if (state.inGk[left] || state.inGk[right]) {
+                log_debug(
+                    "One of them forms legal support. Pushing to ready queue");
+                intqueue_enqueue(&state.ready_queue, w);
+                goto next_iter;
+              } else {
+                log_debug("w has no legal support.");
+              }
+            } else {
+              log_debug("N[w]=%ld", state.N[w]);
+            }
+          } else {
+            log_debug("w is in Gk");
+          }
+
+          current = edge.link[1];
+        } while (current != em->vertices[v][1]);
+      }
+    next_iter:
+      continue;
+    }
+  }
+
+  arena_free(arenaP);
+  return HS_OK;
+}

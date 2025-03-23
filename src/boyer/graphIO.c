@@ -381,3 +381,26 @@ int gp_Write(graphP theGraph, char *FileName, int Mode) {
 
   return RetVal;
 }
+
+int gp_WriteStream(graphP theGraph, FILE *Outfile, int Mode) {
+  int RetVal;
+
+  if (theGraph == NULL || Outfile == NULL)
+    return NOTOK;
+
+  switch (Mode) {
+  case WRITE_ADJLIST:
+    RetVal = _WriteAdjList(theGraph, Outfile);
+    break;
+  case WRITE_ADJMATRIX:
+    RetVal = _WriteAdjMatrix(theGraph, Outfile);
+    break;
+  case WRITE_DEBUGINFO:
+    RetVal = _WriteDebugInfo(theGraph, Outfile);
+    break;
+  }
+
+    fflush(Outfile);
+
+  return RetVal;
+}

@@ -12,6 +12,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include "appconst.h"
 
 // #define ORIGINAL_IMPLEMENTATION
 
@@ -120,6 +121,7 @@ void bm04_init_graph(bm04_graph *G, const igraph_t *g) {
     bm04_VERTEX(G, vi).parent = -1;
   }
 }
+
 
 void bm04_dfs(bm04_graphP G, const igraph_t *g, gint *dfi, gint v, gint u) {
   bm04_VINFO(G, v).dfi = *dfi;

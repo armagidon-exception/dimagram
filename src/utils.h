@@ -29,6 +29,7 @@ static inline int mini(int a, int b) { return a < b ? a : b; }
 #define UCAST(n) _Generic((n), long: long_to_ulong, int: int_to_uint)(n)
 #define SCAST(n)                                                               \
   _Generic((n), uint64_t: ulong_to_long, uint32_t: uint_to_int)(n)
+
 unsigned long long_to_ulong(long l);
 unsigned int int_to_uint(int i);
 long ulong_to_long(unsigned long l);
