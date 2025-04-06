@@ -34,7 +34,6 @@ Some node types are not supported out of the box. But you can use your own image
 
 - `igraph`
 - `cairo`
-- `criterion`
 - `make`
 - `gcc`
 - Unix like OS
