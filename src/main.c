@@ -19,6 +19,7 @@ void print_help(const char *execname) {
          "stdout if not provided.\n");
   printf("  -h              Display this help message and exit.\n\n");
   printf("  -q              Display only error messages.\n\n");
+  printf("  -v              Display all messages.\n\n");
   printf("Examples:\n");
   printf("  %s -i diagram.txt -o output.svg  # Read from diagram.txt and write "
          "to output.svg\n",
@@ -37,8 +38,8 @@ int main(int argc, char **argv) {
   int opt;
   FILE *input = stdin;
   FILE *output = stdout;
-  // log_set_level(LOG_INFO);
-  while ((opt = getopt(argc, argv, "qi:o:h")) != -1) {
+  log_set_level(LOG_INFO);
+  while ((opt = getopt(argc, argv, "vqi:o:h")) != -1) {
     switch (opt) {
     case 'i': {
       if (input && input != stdin) {
@@ -67,7 +68,11 @@ int main(int argc, char **argv) {
     }
     case 'q': {
       log_set_level(LOG_ERROR);
-        break;
+      break;
+    }
+    case 'v': {
+      log_set_level(LOG_DEBUG);
+      break;
     }
     default:
       print_help(argv[0]);
