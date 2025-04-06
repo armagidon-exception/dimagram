@@ -1,10 +1,9 @@
 #include "cairo.h"
-#include <getopt.h>
-#include <igraph.h>
 #include "diagram.h"
 #include "log.h"
 #include <float.h>
 #include <getopt.h>
+#include <igraph.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -19,6 +18,7 @@ void print_help(const char *execname) {
   printf("  -o output_file  Write output to the specified file. Defaults to "
          "stdout if not provided.\n");
   printf("  -h              Display this help message and exit.\n\n");
+  printf("  -q              Display only error messages.\n\n");
   printf("Examples:\n");
   printf("  %s -i diagram.txt -o output.svg  # Read from diagram.txt and write "
          "to output.svg\n",
@@ -37,7 +37,8 @@ int main(int argc, char **argv) {
   int opt;
   FILE *input = stdin;
   FILE *output = stdout;
-  while ((opt = getopt(argc, argv, "i:o:h")) != -1) {
+  // log_set_level(LOG_INFO);
+  while ((opt = getopt(argc, argv, "qi:o:h")) != -1) {
     switch (opt) {
     case 'i': {
       if (input && input != stdin) {
@@ -60,8 +61,13 @@ int main(int argc, char **argv) {
         perror("Error");
         exit(EXIT_FAILURE);
       }
+      log_set_quiet(false);
       output = f;
       break;
+    }
+    case 'q': {
+      log_set_level(LOG_ERROR);
+        break;
     }
     default:
       print_help(argv[0]);

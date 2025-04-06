@@ -366,7 +366,7 @@ static int init_embedding(igraph_t *g, embedding_t *em, Arena *arena) {
   em->vertices = arena_calloc(arena, UCAST(em->N), sizeof(em_vertex));
   em->degrees = arena_calloc(arena, UCAST(em->N), sizeof(gint));
 
-  gp_Write(G, "stdout", WRITE_ADJLIST);
+  // gp_Write(G, "stdout", WRITE_ADJLIST);
 
   em->M = 2 * G->M;
   gint C = 2 * em->N;
@@ -664,10 +664,10 @@ static hs_error_t canonical_ordering(igraph_t *g, embedding_t *em,
   leftHandWalk(em, &state.rhw, arenaP);
 
   // log_debug("Faces");
-  for (int i = 0; i < SCAST(state.rhw.faces.N); i++) {
-    printf("%d ", i);
-    printFace(&state.rhw.faces, state.rhw.edges, em, i);
-  }
+  // for (int i = 0; i < SCAST(state.rhw.faces.N); i++) {
+  //   printf("%d ", i);
+  //   printFace(&state.rhw.faces, state.rhw.edges, em, i);
+  // }
 
   // Array of flags that indicate wether a vertex is in Gk to avoid looping over
   // the output array
@@ -679,8 +679,8 @@ static hs_error_t canonical_ordering(igraph_t *g, embedding_t *em,
   gint extFaceEdge = findExteriorEdge(em);
 
   log_debug("External face");
-  printFace(&state.rhw.faces, state.rhw.edges, em,
-            state.rhw.edges[extFaceEdge].leftface);
+  // printFace(&state.rhw.faces, state.rhw.edges, em,
+  //           state.rhw.edges[extFaceEdge].leftface);
   log_debug("(%ld, %ld)", EDGE_SOURCE(*em, extFaceEdge),
             EDGE_TARGET(*em, extFaceEdge));
 
