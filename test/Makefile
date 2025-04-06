@@ -35,7 +35,7 @@ test-all: $(TESTS) | build-folder
 build/%.o: %.c | build-folder
 	$(CC) $(CFLAGS) -c $^ -o $@ $(LDFLAGS)
 
-build/%: %.c $(TARGET_OBJECTS) $(UTILS_OBJECTS) | build-folder
+build/%: %.c $(TARGETS) $(UTILS_OBJECTS) | build-folder
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
 
 build-folder:
