@@ -147,6 +147,7 @@ This code was generated using [glazer](https://github.com/EvorsioDev/Glazer)
 - [Cairo](https://www.cairographics.org/) - Graphics library for C
 - [zhash-c](https://github.com/zfletch/zhash-c) - Hashmap implementation for C
 - [Boyer-Myrvold Planarity Tester](https://jgaa.info/index.php/jgaa/article/view/paper91) - Original Boyer-Myrvold implementation by the authors of the original paper. (I tried to write my own one, but it was too hard)
+- [arena](https://github.com/tsoding/arena) - Arena allocator for C
 
 ## References
 
