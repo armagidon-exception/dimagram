@@ -38,6 +38,7 @@ Some node types are not supported out of the box. But you can use your own image
 - `cairo`
 - `make`
 - `gcc`
+- `libunwind-ptrace` (for testing to print out backtraces)
 - Unix like OS
 
 ### Building
