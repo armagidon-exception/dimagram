@@ -2,6 +2,8 @@
 
 Generate diagrams from text input.
 
+![output eng](https://github.com/user-attachments/assets/afc4834d-afdd-4e93-9a57-0bedf970a723)
+
 ## Description
 
 Dimagram (the name will change at some point) is a tool to create diagrams from text input.
@@ -54,8 +56,11 @@ make build-test
 
 ## How to use
 
-Dimagram supports ED diagrams in Chen's notation.
-Simple markup language which we shall call elementary graphics language has the following notation
+Dimagram supports ER diagrams in Chen's notation.
+
+You have to mark your diagram up in a text file using a special markup language.
+
+Simple markup language which we shall call elementary graphics language (EGL) has the following notation
 - To define an entity you use this notation
 ```
 entity <identifier> "<label>"
@@ -72,19 +77,63 @@ attribute <identifier> "<label>"
 ```
 node <identifier> "<filename>"
 ```
-
-!! Quotation marks are **mandatory**
-!! Identifier is a string of alphanumeric characters with underscores and no spaces or any other blank characters.
-!! Images in node must be of raster type
+Each type of node requires identifier and label to be specified. Identifier can be any alphanumeric sequence of characters. 
+Label is put in quotation marks. Importing images as nodes requires input images to be in raster format e.g. png, jpeg.
+After marking the diagram up the diagram needs to be compiled.
 
 - To compile the file you use
 ```sh
 <path to dimagram> -i <input> -o <output>
 ```
+for example
+```sh
+dimagram -i diagram.txt -o diagram.svg
+```
+
 - Or you could run it like this
 ```sh
 <path to dimagram> < <input> > <output>
 ```
+for example
+```sh
+dimagram < diagram.txt > diagram.svg
+```
+
+### Examples
+```egl
+entity student "Student"
+entity course "Course"
+relationship student_enrolls_course "Student enrolls in course"
+link student and student_enrolls_course
+link student_enrolls_course and course
+
+entity lector "Lecturer"
+relationship lector_makes_course "Lecturer creates course"
+link lector and lector_makes_course
+link lector_makes_course and course
+
+entity lection "Lecture"
+relationship lector_makes_lection "Lecturer creates lecture"
+link lection and lector_makes_lection
+link lector_makes_lection and lector
+
+entity homework "Homework"
+relationship lection_contains_homework "Lecture contains homework"
+link lection_contains_homework and lection
+link lection_contains_homework and homework
+```
+![output eng](https://github.com/user-attachments/assets/afc4834d-afdd-4e93-9a57-0bedf970a723)
+
+```egl
+entity student "student"
+entity book "book"
+entity car "car"
+link book and student
+link car and student
+```
+![output](https://github.com/user-attachments/assets/efff3756-57e5-4ef3-923f-af587c56c308)
+
+This code was generated using [glazer](https://github.com/EvorsioDev/Glazer)
 
 ## Inspirations
 
@@ -97,7 +146,7 @@ node <identifier> "<filename>"
 - [igraph](https://igraph.org/c/) - Graph library for C
 - [Cairo](https://www.cairographics.org/) - Graphics library for C
 - [zhash-c](https://github.com/zfletch/zhash-c) - Hashmap implementation for C
-- [Boyer-Myrvold Planarity Tester](https://jgaa.info/index.php/jgaa/article/view/paper91) - Original Boyer-Myrvold implementation by the authors of the original paper. (I tried to write my own one, but it was too hard ;( )
+- [Boyer-Myrvold Planarity Tester](https://jgaa.info/index.php/jgaa/article/view/paper91) - Original Boyer-Myrvold implementation by the authors of the original paper. (I tried to write my own one, but it was too hard)
 
 ## References
 
